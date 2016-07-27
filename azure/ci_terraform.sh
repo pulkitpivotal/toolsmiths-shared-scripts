@@ -2,7 +2,7 @@
 set -x
 
 TOP=$PWD
-dir=${ENV_DIR}
+dir=$PWD
 
 help() {
   echo "USAGE:"
