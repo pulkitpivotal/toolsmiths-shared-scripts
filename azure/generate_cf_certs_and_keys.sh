@@ -47,22 +47,17 @@ if [[ -z "${override_option}" ]]; then
 fi
 
 MODE=ask
-while true
-do
-  case "${override_option}" in
-    -y|--yes)
-      MODE=overwrite
-      shift
-      ;;
-    -n|--no)
-      MODE=keep
-      shift
-      ;;
-    *)
-      break
-      ;;
-  esac
-done
+
+case "${override_option}" in
+  -y|--yes)
+    MODE=overwrite
+    ;;
+  -n|--no)
+    MODE=keep
+    ;;
+  *)
+    ;;
+esac
 
 
 mkdir -p "${certs_and_keys_dir}"/cf
