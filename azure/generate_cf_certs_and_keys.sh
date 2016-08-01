@@ -49,7 +49,7 @@ fi
 MODE=ask
 while true
 do
-  case ${override_option} in
+  case "${override_option}" in
     -y|--yes)
       MODE=overwrite
       shift
