@@ -36,7 +36,35 @@ resources:
   - name: toolsmiths-shared-scripts
     type: git
     source:
-      uri: https://github.com/pivotal-cf/toolsmiths-shared-scripts
+      uri: https://github.com/pulkitpivotal/toolsmiths-shared-scripts
+      private_key: |
+        -----BEGIN RSA PRIVATE KEY-----
+        MIIEogIBAAKCAQEAwxWUDONkXcQM8TTYrGcdrmcslINPDhk9u8Lreez2dTGnDgoS
+        5HvJH1ZFTdKx0hrKD8tSmrD1i1tJQcJz7Z41GeIVrzosY5ts1gVkFqAdKKTA+fsR
+        Y8elNETfN4yLe3EbgB0e8AyQ9g0v0Kk5W/DUF+VpI5rKI9yvUzDm0bE9IpveR5ja
+        Wo6YnvaXBij+gTPhYfom1lJq9MwJpllBu89nd5ZAOqZKqK6pnfj5bVMAM23+LfUX
+        LNjypzSqQpaOvrZe1ACbN4n9egNEgwQz7QukZDXyiF3SPAvZYoXeKr/dOc2QZcQS
+        Yyj+29FuyYkBahk7tpwTGSTG/LzFEJxQunA6eQIDAQABAoIBAGPEaU6eC/oYBTZl
+        /FlO8tL6WMYq0Qc4yWV4rcxQ70nH9tMrO7Y1yAmKqS6/jckRgjzJkpkh3rFCIhjL
+        RVZEDowKH2TZr1HRbruVTjZz8/WRLE+rop0QwOAWSMGz0rFyisneGrBQ/OGYpNdl
+        c7wdUZpW7IoU40Or3M4CuEiNB+LmRsL0t7tBDSu5KE2Ec1n46auC4j9tTEJYtsv9
+        XJ41+qyph1lXgt4wNfJ8ciBjs25nQPvCYUJoAtb0UxU+E80xPmJ6b34V01EEohDZ
+        sAoBDVBLe4zBPWibZsUIRKFYyf5OMmr8+Iy2T5DV0SclCvZTpfS4KbOEI8hYr6a2
+        pn3FIgECgYEA68qf/eZJdqc0Sn3oY6jtVkW5RzKjQjY21L9enJVFXelObdj/vZER
+        n4HclENGK7XFGvi9nkcv746JoomiPkiyFzZO6gEuEi2vDaG5Hf55fevALWwsWNcU
+        UpvZjuqdfcsXwUdq8KsVjM7trEUVyqJmgQt3wen2I42u9FxWPK81XLECgYEA083R
+        dVbnLicBiuZwsB8YKtYCQggVXCL4nbE0kXKIv1LLC4X8fnHPyUmGOX+NhNMAyr4o
+        fmP8QiJcERcT9XNR8pceeZJ3CgMn645/alnc+o5kBSWBeZBIxUC1GJRjLgkuuwlV
+        KdVK/OsWheTLzOPBi4Xpo0A/O9tb9//X3bAIjEkCgYBRroTUIOWMHAoqUAmkFI37
+        V/YCKxGRS1SdSJoO5kr8aGkJ9qVJVyritcri9ZcmZzabzFVrsj9x3k/hpYo1x1si
+        XWbi+3upQngk4cROFqyhqXyOf62xLPjWUTUBpFbgj+1vwDzUmH/Dop+FEP2mj7Gw
+        vHdFDrZ8xIU6E46wQQXcUQKBgCqyE6YetY11KXdxiofGTN3dtCjRblTba9iF7z3e
+        o7hFnU6eXM60bJl768XNc56x1jgIaytHRoOiX4LGbyyMaZmIYwlIwBxRlIuEdyTe
+        JpCPgZQUAmyZ7EFvENJ6nx+ZlET51aQQLgSb8zdcbsTHqK1Sek2BVv3e80Qj28UB
+        hkeZAoGAe1QZw0I7dQQrtkm+SH26SjH9FFgIyBYqM2eFkVV12PLV+UEU8O126mTs
+        dB3hZ13iNjsTBjyiGtKw+8QpHxwBL7smyjnVYBidzGdjtZcmfvEi1q1HrlhCT8sc
+        ZdqXCXgiy3+kyzCVXS6jZB/FELHymBe7R2cYw6FxARII7ECw4IQ=
+        -----END RSA PRIVATE KEY-----
 
 jobs:
   - name: bootstrap-environment
