@@ -1,6 +1,40 @@
 #!/bin/bash
 set -ex
 
+generate_certs_and_keys () {
+  country_name="US"
+  state="New York"
+  locality="New York"
+  organisation="Pivotal"
+  organisational_unit="Cloud Foundry"
+  subdomain="pcf-gemfire.com"
+  env_name="${2}"
+  common_name="${env_name}.${subdomain}"
+
+  openssl genrsa -out private.key 2048 &&
+    echo -e "\n\n\n\n\n\n\n"
+    openssl req \
+            -sha256 \
+            -new \
+            -key private.key \
+            -out public_cert.pem \
+            -subj "/C=${country_name}/ST=${state}/L=${locality}/O=${organisation}/OU=${organisational_unit}/CN=*.${common_name}"
+
+    openssl x509 -req \
+            -days 5000 \
+            -in public_cert.pem \
+            -signkey private.key \
+            -out public_cert.pem \
+            -extfile <(
+            cat <<-EOF
+                basicConstraints=critical,CA:true,pathlen:0
+                subjectAltName=DNS:*.system.${env_name}.pcf-gemfire.com,DNS:*.apps.${env_name}.pcf-gemfire.com,DNS:*.uaa.system.${env_name}.pcf-gemfire.com,DNS:*.login.system.${env_name}.pcf-gemfire.com
+EOF
+      )
+  cat public_cert.pem private.key > "${1}"
+  rm public_cert.pem private.key
+}
+
 if [[ -z $1 ]]; then
   echo "Usage: ./generate_cf_certs_and_keys.sh [options] <PATH TO DIR>"
   echo "Options:"
@@ -56,47 +90,12 @@ done
 
 if [[ $ha_proxy_ssl_pem_flag == true ]]; then
   echo -e "\n\n=== GENERATING HAPROXY CERT ===\n"
-  country_name="US"
-  state="New York"
-  locality="New York"
-  organisation="Pivotal"
-  organisational_unit="Cloud Foundry"
-  subdomain="pcf-gemfire.com"
-  env_name="${2}"
-  common_name="${env_name}.${subdomain}"
-
-
-  openssl genrsa -out haproxy.key 2048 &&
-    echo -e "\n\n\n\n\n\n\n"
-    openssl req \
-            -sha256 \
-            -new \
-            -key haproxy.key \
-            -out haproxy_cert.pem \
-            -subj "/C=${country_name}/ST=${state}/L=${locality}/O=${organisation}/OU=${organisational_unit}/CN=*.${common_name}"
-
-    openssl x509 -req \
-            -days 5000 \
-            -in haproxy_cert.pem \
-            -signkey haproxy.key \
-            -out haproxy_cert.pem \
-            -extfile <(
-            cat <<-EOF
-                basicConstraints=critical,CA:true,pathlen:0
-                subjectAltName=DNS:*.system.${env_name}.pcf-gemfire.com,DNS:*.apps.${env_name}.pcf-gemfire.com,DNS:*.uaa.system.${env_name}.pcf-gemfire.com,DNS:*.login.system.${env_name}.pcf-gemfire.com
-EOF
-      )
-  cat haproxy_cert.pem haproxy.key > ha_proxy_ssl_pem
-  rm haproxy_cert.pem haproxy.key
+  generate_certs_and_keys ha_proxy_ssl_pem
 fi
 
 if [[ $loginha_proxy_ssl_pem_flag == true ]]; then
   echo -e "\n\n=== GENERATING LOGIN HAPROXY CERT ===\n"
-  openssl genrsa -out loginhaproxy.key 2048 &&
-    echo -e "\n\n\n\n\n\n\n" | openssl req -new -x509 -days 3650 -key loginhaproxy.key -out loginhaproxy_cert.pem
-
-  cat loginhaproxy_cert.pem loginhaproxy.key > loginha_proxy_ssl_pem
-  rm loginhaproxy_cert.pem loginhaproxy.key
+  generate_certs_and_keys loginha_proxy_ssl_pem
 fi
 
 if [[ $jwt_signing_key_flag == true ]]; then
