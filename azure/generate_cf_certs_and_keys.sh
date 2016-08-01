@@ -1,7 +1,7 @@
 #!/bin/bash
 set -ex
 
-env_name="${2}"
+ENV_NAME="${2}"
 
 generate_certs_and_keys () {
   country_name="US"
@@ -10,7 +10,7 @@ generate_certs_and_keys () {
   organisation="Pivotal"
   organisational_unit="Cloud Foundry"
   subdomain="pcf-gemfire.com"
-  common_name="${env_name}.${subdomain}"
+  common_name="${ENV_NAME}.${subdomain}"
 
   openssl genrsa -out private.key 2048 &&
     echo -e "\n\n\n\n\n\n\n"
@@ -29,7 +29,7 @@ generate_certs_and_keys () {
             -extfile <(
             cat <<-EOF
                 basicConstraints=critical,CA:true,pathlen:0
-                subjectAltName=DNS:*.system.${env_name}.pcf-gemfire.com,DNS:*.apps.${env_name}.pcf-gemfire.com,DNS:*.uaa.system.${env_name}.pcf-gemfire.com,DNS:*.login.system.${env_name}.pcf-gemfire.com
+                subjectAltName=DNS:*.system.${ENV_NAME}.pcf-gemfire.com,DNS:*.apps.${ENV_NAME}.pcf-gemfire.com,DNS:*.uaa.system.${ENV_NAME}.pcf-gemfire.com,DNS:*.login.system.${ENV_NAME}.pcf-gemfire.com
 EOF
       )
   cat public_cert.pem private.key > "${1}"
