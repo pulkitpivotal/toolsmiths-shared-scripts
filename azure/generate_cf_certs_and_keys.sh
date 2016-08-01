@@ -1,6 +1,8 @@
 #!/bin/bash
 set -ex
 
+env_name="${2}"
+
 generate_certs_and_keys () {
   country_name="US"
   state="New York"
@@ -8,7 +10,6 @@ generate_certs_and_keys () {
   organisation="Pivotal"
   organisational_unit="Cloud Foundry"
   subdomain="pcf-gemfire.com"
-  env_name="${2}"
   common_name="${env_name}.${subdomain}"
 
   openssl genrsa -out private.key 2048 &&
