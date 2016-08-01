@@ -1,7 +1,9 @@
 #!/bin/bash
 set -ex
 
-ENV_NAME="${2}"
+override_option="${1}"
+certs_and_keys_dir="${2}"
+ENV_NAME="${3}"
 
 generate_certs_and_keys () {
   country_name="US"
@@ -36,7 +38,7 @@ EOF
   rm public_cert.pem private.key
 }
 
-if [[ -z $1 ]]; then
+if [[ -z "${override_option}" ]]; then
   echo "Usage: ./generate_cf_certs_and_keys.sh [options] <PATH TO DIR>"
   echo "Options:"
   echo "    -y|--yes    Always overwrite files"
@@ -47,7 +49,7 @@ fi
 MODE=ask
 while true
 do
-  case $1 in
+  case ${override_option} in
     -y|--yes)
       MODE=overwrite
       shift
@@ -62,10 +64,9 @@ do
   esac
 done
 
-certs_and_keys_dir=$1
 
-mkdir -p $certs_and_keys_dir/cf
-pushd $certs_and_keys_dir/cf
+mkdir -p "${certs_and_keys_dir}"/cf
+pushd "${certs_and_keys_dir}"/cf
 
 
 for file in ha_proxy_ssl_pem loginha_proxy_ssl_pem jwt_signing_key; do
