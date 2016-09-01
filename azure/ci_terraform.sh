@@ -1,14 +1,41 @@
 #!/bin/bash
-set -x
+set -xe
+
+exit_func() {
+  exit_code=$?
+
+  # Try to ensure that terraform state is preserved
+  [ -f terraform.tfstate ] && git add terraform.tfstate
+  if [ -n "$(git status -s | grep -v ^?)" ]
+  then
+    git commit -m "Concourse Azure pipeline: terraform ${1} ${ENV_NAME}"
+  else
+    echo "Skipping commit; no changes to tracked files."
+  fi
+
+  if [ ${exit_code} -eq 0 ]
+  then
+    exit
+  else
+    echo "[ERROR] Unexpected progam exit (code: $exit_code)"
+  fi
+}
+trap exit_func EXIT
 
 TOP=$PWD
-dir=$PWD
+EXIT_CODE=0
 
 help() {
   echo "USAGE:"
   echo "  $0 [-d env_dir] destroy"
   echo "  $0 [-d env_dir] apply"
   echo "  $0 [-d env_dir] recreate"
+}
+
+
+die() {
+  echo "[ERROR] $*"
+  exit 1
 }
 
 
@@ -19,7 +46,7 @@ generate_config() {
   git add devbox_password.txt
 
   # Generate SSH keypair
-  [ -f id_rsa_bosh ] || ssh-keygen -t rsa -b 2048 -N "" -f id_rsa_bosh
+  [ -f id_rsa_bosh ] || ssh-keygen -t rsa -b 2048 -N "" -C "bosh key for ${ENV_NAME}" -f id_rsa_bosh
   [ -f id_rsa_bosh.pub ] || ssh-keygen -y -f id_rsa_bosh > id_rsa_bosh.pub
   git add id_rsa_bosh id_rsa_bosh.pub
 
@@ -28,10 +55,14 @@ generate_config() {
   BOSH_SSH_PUBLIC_KEY=$(cat id_rsa_bosh.pub)
 
   cp $TOP/toolsmiths-shared-scripts/azure/azure.tf .
-  sed -i -e "s/your-subscription-id/${AZURE_SUBSCRIPTION}/" \
+  sed -i -e "s/your-location/${AZURE_REGION}/" \
+    -e "s/your-subscription-id/${AZURE_SUBSCRIPTION}/" \
     -e "s/your-client-id/${AZURE_CLIENT_ID}/" \
-    -e "s/your-client-secret/${AZURE_CLIENT_SECRET}/" \
+    -e "s^your-client-secret^${AZURE_CLIENT_SECRET}^" \
     -e "s/your-tenant-id/${AZURE_TENANT_ID}/" \
+    -e "s/your-aws-access-key/${AWS_SHARED_DNS_ACCESS_KEY}/" \
+    -e "s^your-aws-secret-key^${AWS_SHARED_DNS_ACCESS_SECRET}^" \
+    -e "s/your-route53-zone-id/${AWS_ROUTE53_ZONE_ID}/" \
     -e "s/your-environment-name/${ENV_NAME}/" \
     -e "s/your-devbox-admin-user/${DEVBOX_USERNAME}/" \
     -e "s/your-devbox-admin-password/${DEVBOX_PASSWORD}/" \
@@ -60,19 +91,23 @@ retry() {
   local try=1
   local tries=$1
   shift
-  local cmd=$@
+  local cmd="$@"
 
   while [ ${try} -le ${tries} ]
   do
-    $cmd
-    [ $? -eq 0 ] && return
-    try=$(( $try + 1 ))
+    if $cmd
+    then
+      return
+    else
+      try=$(( $try + 1 ))
+    fi
   done
 
-  exit 1
+  return 1
 }
 
 
+dir=.
 while true
 do
   case $1 in
@@ -87,41 +122,65 @@ do
 done
 
 
-# Clone deployments-toolsmiths for update
+# Clone deployments-toolsmiths for state update.
 git config --global user.email "${GIT_EMAIL}"
 git config --global user.name "${GIT_NAME}"
 git clone ${TOP}/azure_environments ${TOP}/environment
-cd ${TOP}/environment/${dir}
+cd ${TOP}/environment
 
-[ -f terraform.tfstate ] && terraform refresh
+# Ensure that the environment state tracking directory is exists
+if [ ! -d "${TOP}/environment/${dir}" ]
+then
+  mkdir -p "${TOP}/environment/${dir}" || die "cannot create state directory: ${TOP}/environment/${dir}"
+  git add "${TOP}/environment/${dir}"
+fi
+cd ${TOP}/environment/${dir}
+git status >/dev/null 2>&1 || die "Not in a git repository"
+
+# Ensure that we have an upto date state file
+if [ -f terraform.tfstate ]
+then
+  if terraform refresh
+  then
+    echo "Terraform refresh complete."
+  else
+    echo "Terraform refresh failed."
+  fi
+fi
 
 if [ $1 = destroy ]
 then
   if [ -f terraform.tfstate ]
   then
     echo "Destroying environment."
-    retry 3 terraform destroy -force
+    if ! retry 3 terraform destroy -force
+    then
+      EXIT_CODE=1
+    fi
   else
     echo "There does not seem to be anything to destroy."
-    exit 0
   fi
 elif [ $1 = apply ]
 then
   echo "Applying changes to environment."
   generate_config
-  retry 3 terraform apply
-  generate_details
+  if retry 3 terraform apply
+  then
+    generate_details
+  else
+    EXIT_CODE=1
+  fi
 elif [ $1 = recreate ]
 then
   echo "[Re-]creating environment."
   [ -f terraform.tfstate ] && terraform destroy -force
   generate_config
   retry 3 terraform apply
+  EXIT_CODE=$?
   generate_details
 else
   help
   exit 1
 fi
 
-git add terraform.tfstate
-git commit -m "Concourse Azure pipeline: terraform ${ENV_NAME}"
+exit ${EXIT_CODE}

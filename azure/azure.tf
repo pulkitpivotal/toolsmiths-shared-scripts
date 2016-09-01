@@ -1,8 +1,3 @@
-############################################################################
-# Notes: We currently need to manually create the storage table:
-# `azure storage table create --account-name $storage_account_name --account-key $storage_account_key --table stemcell`
-# https://github.com/hashicorp/terraform/issues/7257
-#
 ############################## UPDATE BELOW #################################
 
 # Follow instructions here to get credentials: http://bosh.io/docs/azure-resources.html
@@ -12,6 +7,14 @@ variable "azure_credentials" {
     client_id       = "your-client-id"
     client_secret   = "your-client-secret"
     tenant_id       = "your-tenant-id"
+  }
+}
+
+variable "aws" {
+  default = {
+    access_key = "your-aws-access-key"
+    secret_key = "your-aws-secret-key"
+    route_53_zone = "your-route53-zone-id"
   }
 }
 
@@ -87,10 +90,17 @@ variable "devbox_configs" {
 ######################################################################################
 
 provider "azurerm" {
-  subscription_id = "${var.azure_credentials.subscription_id}"
-  client_id       = "${var.azure_credentials.client_id}"
-  client_secret   = "${var.azure_credentials.client_secret}"
-  tenant_id       = "${var.azure_credentials.tenant_id}"
+  subscription_id = "${var.azure_credentials["subscription_id"]}"
+  client_id       = "${var.azure_credentials["client_id"]}"
+  client_secret   = "${var.azure_credentials["client_secret"]}"
+  tenant_id       = "${var.azure_credentials["tenant_id"]}"
+}
+
+provider "aws" {
+  alias = "aws"
+  access_key = "${var.aws["access_key"]}"
+  secret_key = "${var.aws["secret_key"]}"
+  region = "us-east-1"
 }
 
 
@@ -119,6 +129,12 @@ resource "azurerm_storage_container" "stemcellcontainer" {
     resource_group_name = "${azurerm_resource_group.resourcegroup.name}"
     storage_account_name = "${azurerm_storage_account.storageaccount.name}"
     container_access_type = "blob"
+}
+
+resource "azurerm_storage_table" "stemcelltable" {
+    name = "stemcell"
+    resource_group_name = "${azurerm_resource_group.resourcegroup.name}"
+    storage_account_name = "${azurerm_storage_account.storageaccount.name}"
 }
 
 resource "azurerm_public_ip" "haproxypublicip" {
@@ -153,28 +169,28 @@ resource "azurerm_subnet" "boshsubnet" {
     name = "boshnetwork"
     resource_group_name = "${azurerm_resource_group.resourcegroup.name}"
     virtual_network_name = "${azurerm_virtual_network.virtualnetwork.name}"
-    address_prefix = "${var.subnets.bosh}"
+    address_prefix = "${var.subnets["bosh"]}"
 }
 
 resource "azurerm_subnet" "cloudfoundrysubnet" {
     name = "cloudfoundrynetwork"
     resource_group_name = "${azurerm_resource_group.resourcegroup.name}"
     virtual_network_name = "${azurerm_virtual_network.virtualnetwork.name}"
-    address_prefix = "${var.subnets.cloudfoundry}"
+    address_prefix = "${var.subnets["cloudfoundry"]}"
 }
 
 resource "azurerm_subnet" "diegosubnet" {
     name = "diegonetwork"
     resource_group_name = "${azurerm_resource_group.resourcegroup.name}"
     virtual_network_name = "${azurerm_virtual_network.virtualnetwork.name}"
-    address_prefix = "${var.subnets.diego}"
+    address_prefix = "${var.subnets["diego"]}"
 }
 
 resource "azurerm_subnet" "mysqlsubnet" {
     name = "mysqlnetwork"
     resource_group_name = "${azurerm_resource_group.resourcegroup.name}"
     virtual_network_name = "${azurerm_virtual_network.virtualnetwork.name}"
-    address_prefix = "${var.subnets.mysql}"
+    address_prefix = "${var.subnets["mysql"]}"
 }
 
 resource "azurerm_network_security_group" "boshsecuritygroup" {
@@ -286,7 +302,7 @@ resource "azurerm_network_interface" "devboxnic" {
         name = "devboxnic"
         subnet_id = "${azurerm_subnet.boshsubnet.id}"
         private_ip_address_allocation = "static"
-        private_ip_address = "${var.devbox_configs.private_ip}"
+        private_ip_address = "${var.devbox_configs["private_ip"]}"
         public_ip_address_id = "${azurerm_public_ip.devboxpublicip.id}"
     }
 }
@@ -301,7 +317,7 @@ resource "azurerm_virtual_machine" "devboxvm" {
     storage_image_reference {
         publisher = "Canonical"
         offer = "UbuntuServer"
-        sku = "14.04.3-LTS"
+        sku = "14.04.4-LTS"
         version = "latest"
     }
 
@@ -314,25 +330,42 @@ resource "azurerm_virtual_machine" "devboxvm" {
 
     os_profile {
         computer_name = "${var.environment_name}jumpbox"
-        admin_username = "${var.devbox_configs.username}"
-        admin_password = "${var.devbox_configs.password}"
+        admin_username = "${var.devbox_configs["username"]}"
+        admin_password = "${var.devbox_configs["password"]}"
     }
 
     os_profile_linux_config {
         disable_password_authentication = true
         ssh_keys {
-          path = "/home/${var.devbox_configs.username}/.ssh/authorized_keys"
-          key_data = "${var.devbox_configs.publickey}"
+          path = "/home/${var.devbox_configs["username"]}/.ssh/authorized_keys"
+          key_data = "${var.devbox_configs["publickey"]}"
         }
     }
 }
 
-output "devboxpublicip" {
-  value = "${azurerm_public_ip.devboxpublicip.ip_address}"
+resource "aws_route53_record" "jumpbox" {
+  provider = "aws.aws"
+  zone_id = "${var.aws["route_53_zone"]}"
+  name = "jb.${var.environment_name}.azure"
+  type = "A"
+  ttl = "60"
+  records = [
+    "${azurerm_public_ip.devboxpublicip.ip_address}"]
 }
 
-output "notes" {
-  value = "We currently need to manually create the storage table:\nhttps://github.com/hashicorp/terraform/issues/7257\nhttps://github.com/hashicorp/terraform/issues/7257"
+resource "aws_route53_record" "wildcard" {
+  provider = "aws.aws"
+  zone_id = "${var.aws["route_53_zone"]}"
+  name = "*.${var.environment_name}.azure"
+  type = "A"
+  ttl = "60"
+  records = [
+    "${azurerm_public_ip.haproxypublicip.ip_address}"]
+}
+
+
+output "devboxpublicip" {
+  value = "${azurerm_public_ip.devboxpublicip.ip_address}"
 }
 
 output "variables.yml" {
@@ -348,80 +381,80 @@ system_domain: 'REPLACE_WITH_YOUR_SYSTEM_DOMAIN'
 ### VALUES GENERATED BY TERRAFORM ###
 
 ## Azure
-subscription_id: '${var.azure_credentials.subscription_id}'
-client_id: '${var.azure_credentials.client_id}'
-client_secret: '${var.azure_credentials.client_secret}'
-tenant_id: '${var.azure_credentials.tenant_id}'
+subscription_id: '${var.azure_credentials["subscription_id"]}'
+client_id: '${var.azure_credentials["client_id"]}'
+client_secret: '${var.azure_credentials["client_secret"]}'
+tenant_id: '${var.azure_credentials["tenant_id"]}'
 vnet_name: '${azurerm_virtual_network.virtualnetwork.name}'
 resource_group_name: '${azurerm_resource_group.resourcegroup.name}'
 storage_account_name: '${azurerm_storage_account.storageaccount.name}'
-devbox_username: '${var.devbox_configs.username}'
+devbox_username: '${var.devbox_configs["username"]}'
 devbox_public_ip: '${azurerm_public_ip.devboxpublicip.ip_address}'
 dns: '${var.dns}'
 
 ## Bosh
 bosh_subnet_name: '${azurerm_subnet.boshsubnet.name}'
 default_security_group: '${azurerm_network_security_group.boshsecuritygroup.name}'
-bosh_admin_password: '${var.credentials.bosh_admin_password}'
+bosh_admin_password: '${var.credentials["bosh_admin_password"]}'
 
 ## MySQL
 mysql_subnet_name: '${azurerm_subnet.mysqlsubnet.name}'
-mysql_subnet_range: '${var.subnets.mysql}'
-mysql_reserved_range: '${cidrhost(var.subnets.mysql, 2)} - ${cidrhost(var.subnets.mysql, 3)}'
-mysql_static_range: '${cidrhost(var.subnets.mysql, 4)} - ${cidrhost(var.subnets.mysql, 50)}'
-mysql_gateway: '${cidrhost(var.subnets.mysql, 1)}'
-mysql_ip: '${cidrhost(var.subnets.mysql, 4)}'
-mysql_proxy_ip: '${cidrhost(var.subnets.mysql, 5)}'
+mysql_subnet_range: '${var.subnets["mysql"]}'
+mysql_reserved_range: '${cidrhost(var.subnets["mysql"], 2)} - ${cidrhost(var.subnets["mysql"], 3)}'
+mysql_static_range: '${cidrhost(var.subnets["mysql"], 4)} - ${cidrhost(var.subnets["mysql"], 50)}'
+mysql_gateway: '${cidrhost(var.subnets["mysql"], 1)}'
+mysql_ip: '${cidrhost(var.subnets["mysql"], 4)}'
+mysql_proxy_ip: '${cidrhost(var.subnets["mysql"], 5)}'
 
 ## CF
 cf_subnet_name: '${azurerm_subnet.cloudfoundrysubnet.name}'
-cf_subnet_range: '${var.subnets.cloudfoundry}'
-cf_reserved_range: '${cidrhost(var.subnets.cloudfoundry, 2)} - ${cidrhost(var.subnets.cloudfoundry, 3)}'
-cf_static_range: '${cidrhost(var.subnets.cloudfoundry, 4)} - ${cidrhost(var.subnets.cloudfoundry, 50)}'
-cf_gateway: '${cidrhost(var.subnets.cloudfoundry, 1)}'
-consul_ip: '${cidrhost(var.subnets.cloudfoundry, 4)}'
+cf_subnet_range: '${var.subnets["cloudfoundry"]}'
+cf_reserved_range: '${cidrhost(var.subnets["cloudfoundry"], 2)} - ${cidrhost(var.subnets["cloudfoundry"], 3)}'
+cf_static_range: '${cidrhost(var.subnets["cloudfoundry"], 4)} - ${cidrhost(var.subnets["cloudfoundry"], 50)}'
+cf_gateway: '${cidrhost(var.subnets["cloudfoundry"], 1)}'
+consul_ip: '${cidrhost(var.subnets["cloudfoundry"], 4)}'
 haproxy_public_ip: "${azurerm_public_ip.haproxypublicip.ip_address}"
 login_haproxy_public_ip: "${azurerm_public_ip.loginhaproxypublicip.ip_address}"
-router_ip: '${cidrhost(var.subnets.cloudfoundry, 5)}'
-nats_ip: '${cidrhost(var.subnets.cloudfoundry, 6)}'
-nfs_ip: '${cidrhost(var.subnets.cloudfoundry, 7)}'
-etcd_ip: '${cidrhost(var.subnets.cloudfoundry, 8)}'
-postgres_ip: '${cidrhost(var.subnets.cloudfoundry, 9)}'
-ccdb_password: '${var.credentials.ccdb}'
-uaadb_password: '${var.credentials.uaadb}'
-cf_api_password: '${var.credentials.cf_api}'
-ccdb_encryption_key: '${var.credentials.ccdb_encryption_key}'
-bulk_api_password: '${var.credentials.bulk_api_password}'
-ccadmin_password: '${var.credentials.ccadmin}'
-uaaadmin_password: '${var.credentials.uaaadmin}'
-doppler_shared_secret: '${var.credentials.doppler_shared_secret}'
-nats_password: '${var.credentials.nats}'
-router_password: '${var.credentials.router}'
-smoketests_password: '${var.credentials.smoketests}'
-mysql_proxy_password: '${var.credentials.mysql_proxy_password}'
-mysql_admin_password: '${var.credentials.mysql_admin_password}'
-uaa_admin_client_secret: '${var.credentials.uaa_admin_client_secret}'
-uaa_cc_client_secret: '${var.credentials.uaa_cc_client_secret}'
-uaa_cc_service_dashboard_secret: '${var.credentials.uaa_cc_service_dashboard}'
-uaa_cc_routing_secret: '${var.credentials.uaa_cc_routing}'
-uaa_cc_username_lookup_secret: '${var.credentials.uaa_cc_username_lookup}'
-uaa_datadog_firehoze_nozzle_secret: '${var.credentials.uaa_datadog_firehoze_nozzle}'
-uaa_gorouter_secret: '${var.credentials.uaa_gorouter}'
-uaa_doppler_secret: '${var.credentials.uaa_doppler}'
-uaa_identity_secret: '${var.credentials.uaa_identity}'
-uaa_login_secret: '${var.credentials.uaa_login}'
-uaa_notifications_secret: '${var.credentials.uaa_notifications}'
-uaa_portal_secret: '${var.credentials.uaa_portal}'
-uaa_ssh_proxy_secret: '${var.credentials.uaa_ssh_proxy}'
-uaa_tcp_emitter_secret: '${var.credentials.uaa_tcp_emitter}'
-uaa_tcp_router_secret: '${var.credentials.uaa_tcp_router}'
-bbs_encryption_passphrase: '${var.credentials.bbs_encryption}'
+router_ip: '${cidrhost(var.subnets["cloudfoundry"], 5)}'
+nats_ip: '${cidrhost(var.subnets["cloudfoundry"], 6)}'
+nfs_ip: '${cidrhost(var.subnets["cloudfoundry"], 7)}'
+etcd_ip: '${cidrhost(var.subnets["cloudfoundry"], 8)}'
+postgres_ip: '${cidrhost(var.subnets["cloudfoundry"], 9)}'
+ccdb_password: '${var.credentials["ccdb"]}'
+uaadb_password: '${var.credentials["uaadb"]}'
+cf_api_password: '${var.credentials["cf_api"]}'
+ccdb_encryption_key: '${var.credentials["ccdb_encryption_key"]}'
+bulk_api_password: '${var.credentials["bulk_api_password"]}'
+ccadmin_password: '${var.credentials["ccadmin"]}'
+uaaadmin_password: '${var.credentials["uaaadmin"]}'
+doppler_shared_secret: '${var.credentials["doppler_shared_secret"]}'
+nats_password: '${var.credentials["nats"]}'
+router_password: '${var.credentials["router"]}'
+smoketests_password: '${var.credentials["smoketests"]}'
+mysql_proxy_password: '${var.credentials["mysql_proxy_password"]}'
+mysql_admin_password: '${var.credentials["mysql_admin_password"]}'
+uaa_admin_client_secret: '${var.credentials["uaa_admin_client_secret"]}'
+uaa_cc_client_secret: '${var.credentials["uaa_cc_client_secret"]}'
+uaa_cc_service_dashboard_secret: '${var.credentials["uaa_cc_service_dashboard"]}'
+uaa_cc_routing_secret: '${var.credentials["uaa_cc_routing"]}'
+uaa_cc_username_lookup_secret: '${var.credentials["uaa_cc_username_lookup"]}'
+uaa_datadog_firehoze_nozzle_secret: '${var.credentials["uaa_datadog_firehoze_nozzle"]}'
+uaa_gorouter_secret: '${var.credentials["uaa_gorouter"]}'
+uaa_doppler_secret: '${var.credentials["uaa_doppler"]}'
+uaa_identity_secret: '${var.credentials["uaa_identity"]}'
+uaa_login_secret: '${var.credentials["uaa_login"]}'
+uaa_notifications_secret: '${var.credentials["uaa_notifications"]}'
+uaa_portal_secret: '${var.credentials["uaa_portal"]}'
+uaa_ssh_proxy_secret: '${var.credentials["uaa_ssh_proxy"]}'
+uaa_tcp_emitter_secret: '${var.credentials["uaa_tcp_emitter"]}'
+uaa_tcp_router_secret: '${var.credentials["uaa_tcp_router"]}'
+bbs_encryption_passphrase: '${var.credentials["bbs_encryption"]}'
 
 ## Diego
 diego_subnet_name: '${azurerm_subnet.diegosubnet.name}'
-diego_subnet_range: '${var.subnets.diego}'
-diego_reserved_range: '${cidrhost(var.subnets.diego, 2)} - ${cidrhost(var.subnets.diego, 3)}'
-diego_static_range: '${cidrhost(var.subnets.diego, 4)} - ${cidrhost(var.subnets.diego, 50)}'
-diego_gateway: '${cidrhost(var.subnets.diego, 1)}'
+diego_subnet_range: '${var.subnets["diego"]}'
+diego_reserved_range: '${cidrhost(var.subnets["diego"], 2)} - ${cidrhost(var.subnets["diego"], 3)}'
+diego_static_range: '${cidrhost(var.subnets["diego"], 4)} - ${cidrhost(var.subnets["diego"], 50)}'
+diego_gateway: '${cidrhost(var.subnets["diego"], 1)}'
 EOF
 }

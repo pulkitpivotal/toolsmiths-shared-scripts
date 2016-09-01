@@ -14,8 +14,6 @@ This repo is a collection of tooling to deploy CF on Azure. It is a set of terra
 	2.	[Pipeline steps](#pipeline-steps)
 	    1. [bootstrap-azure](#bootstrap-azure)
 			1. [bootstrap-environment](#bootstrap-environment)
-			2. [MANUAL STEP: create storage table](#manual-step:-create-storage-table)
-			3. [MANUAL STEP: create wildcard A record](#manual-step:-create-wildcard-a-record)
 			4. [setup-devbox-upload-bosh-yml](#setup-devbox-upload-bosh-yml)
 		2. [deploy-cf-azure](#deploy-cf-azure)
 			1. [deploy-bosh-generate-upload-deployment-ymls](#deploy-bosh-generate-upload-deployment-ymls)
@@ -41,19 +39,22 @@ This repo is a collection of tooling to deploy CF on Azure. It is a set of terra
 
 ### Set Quotas
 
-You will need an Azure account with the correct quotas enabled. To do this, you should open a support ticket after logging into portal.azure.com
+Azure Core Quotas may prevent CF deployment to your account.  You should verify that you have at least 350 cores available in the region you'd like to deploy to.
+
+To verify and request an increase if necessary,  log into portal.azure.com
 
 1. In portal.azure.com in the upper right hand corner, click the ?
 2. Click on 'New support request'
 3. Issue type: Quota
-4. Cores per subscription
+4. Subscription: Your Account
+4. Quota Type: Cores per subscription
 5. Severity: Recommended B or higher
 5. Deployment model: Resource Manager
 6. Region: the region you want to use!
-7. New quota: 202
+7. Verify "Current quota (cores)" is at least 350 and request a new quota of 350 if not.
 You can add additional people to your e-mail, but it's to just send it to your team.
 
-If the Toolsmiths are deploying CF for you, add the 5 Toolsmith Pivots (check Allocations) as an owners of your account in the Azure portal, and leave us a nice message in Slack.
+If the Toolsmiths are deploying CF for you, add the 5 Toolsmith Pivots (check Allocations) as owners of your account in the Azure portal, and leave us a nice message in Slack (please include your region!).
 
 ---
 ## Concourse Pipeline
@@ -63,15 +64,46 @@ If the Toolsmiths are deploying CF for you, add the 5 Toolsmith Pivots (check Al
 To configure the pipeline for your needs, modify the `deploy-cf-azure.yml`. The values that you would need to change are at the top of the file.
 
 ```
-environment_repo: &environment_repo git@github.com:your-org/your-repo.git # This is a git repo where your azure environment manifests will be (or are) stored.
-environment_dir: &environment_dir azure/environments # This is the directory within your azure environments git repo which contains your azure environment(s)
-environment_name: &environment_name banana # This is a directory inside your environments directory which will contain the azure environment manifests
+# The **PRIVATE** git repo where your azure environment manifests will be (or are) stored.
+environment_repo: &environment_repo git@github.com:your-org/your-repo.git 
+
+# Directory within your azure environments git repo which contains your azure environment(s)
+environment_dir: &environment_dir azure/environments 
+
+# The environment directory (ie: <environment_repo>/<environment_dir>/<environment_name>)
+# Must be 3-22 characters long using lowercase letters and numbers only
+environment_name: &environment_name banana 
+
 system_domain: &sys_domain banana.cf-app.com
 devbox_username: &devbox_username <your-dev-box-user> # Azure does not allow 'admin' or 'root'
 git_email: &git_email <your-email> # this is used for your git check-ins
 git_name: &git_name <your-github-name> # this is used for your git check-ins
 github_key: &github_key {{github-key}}
 worker_tag: &worker_tag []
+azure_region: &azure_region "West US"
+
+# Azure subscription ID can be recovered from your Azure account details
+# Tenant ID, Client ID, and Client secret need to be created as documented:
+# https://github.com/cloudfoundry-incubator/bosh-azure-cpi-release/blob/master/docs/get-started/create-service-principal.md
+
+azure_subscription: &azure_subscription {{azure_subscription}}
+azure_tenant_id: &azure_tenant_id {{azure_tenant_id}}
+azure_client_id: &azure_client_id {{azure_client_id}}
+azure_client_secret: &azure_client_secret {{azure_client_secret}}
+```
+
+### Example AD App creation
+
+These steps worked for us, follow the link above for detailed explanations
+
+```
+azure config mode arm
+azure login --environment AzureCloud
+azure account set <AZURE_SUBCRIPTION>
+azure account list --json # look for the tenantId entry
+azure ad app create --name "cf terraform" --password <AZURE_CLIENT_SECRET> --identifier-uris "http://CFterraform" --home-page "http://CFterraform"
+azure ad sp create -a <AZURE_CLIENT_ID>
+azure role assignment create --roleName "Contributor" --spn "http://CFterraform" --subscription <AZURE_SUBSCRIPTION>
 ```
 
 ### Pipeline steps
@@ -83,6 +115,8 @@ This is a pipeline group that is used to bootstrap your Azure environment. In th
   * a resource group
   * a storage account/container
   * public ips for haproxy and devbox
+  * DNS record for the jumpbox: jb.**environment_name**.azure.cf-app.com
+  * DNS wildcard record for the HAProxy: \*.**environment_name**.azure.cf-app.com
   * virtual network
   * subnets for bosh, cloudfoundry, diego, mysql
   * a bosh security group
@@ -105,60 +139,6 @@ After the terraform script is run, the devbox is set up to install common utilit
     your keys must be in the folder: `~/your-repo/azure/environment/banana/id_rsa_bosh(.pub)`
 
 * **Dev Box Password:** You can specify the devbox password to use by creating the file `devbox_password.txt` inside the repo/directory specified in your pipeline. (i.e. ~/your-repo/azure/environment/banana/devbox_password.txt)
-
-##### MANUAL STEP: create storage table
-
-We currently need to manually create the storage table (see: https://github.com/hashicorp/terraform/issues/7257).**Update:** This feature should be included in the terraform 0.7 release.
-
-Run the following commands:
-
-```
-azure login # Follow the instructions to login
-```
-
-Ensure you have the 'arm' mode configured with your azure CLI:
-
-```
-azure config mode arm
-```
-
-To fetch your storage account key, run the following commands and copy the 'Primary' key.
-
-```
-resource_group_name=<your-env-name>
-storage_account_name=<your-env-name>sa
-
-azure storage account keys list --resource-group $resource_group_name $storage_account_name
-```
-You can also get the storage account key via the Azure Portal
-
-Sample Output:
-
-```
-info:    Executing command storage account keys list
-Resource group name: bosh-res-group
-+ Getting storage account keys
-data:    Primary: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-data:    Secondary: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-info:    storage account keys list command OK
-```
-
-Create your storage table:
-
-```
-storage_account_key=<your-storage-account-key>
-
-azure storage table create --account-name $storage_account_name --account-key $storage_account_key --table stemcell
-```
-##### MANUAL STEP: create wildcard A record
-
-You will need to create the wildcard A record to point to the generate HA proxy public IP.
-
-You can find the HA Proxy public IP in your Concourse build logs (haproxy_public_ip). The A record should look like the following:
-
-```
-*.<YOUR-SYSTEM-DOMAIN> = <HA-PROXY-PUBLIC-IP>
-```
 
 ##### setup-devbox-upload-bosh-yml
 
